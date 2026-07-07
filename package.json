@@ -1,0 +1,14 @@
+{
+  "name": "opensocial-cli",
+  "version": "0.1.0",
+  "description": "Open-source LinkedIn & X CLI — mirror your social data into local SQLite and query it from any shell. A clean-room reconstruction of the @usesocial/cli architecture.",
+  "type": "module",
+  "bin": { "social": "bin/social.mjs" },
+  "engines": { "node": ">=22.5.0" },
+  "scripts": {
+    "start": "node bin/social.mjs",
+    "demo": "node bin/social.mjs sync demo timeline && node bin/social.mjs sql \"select author, text, likes from demo_timeline order by likes desc limit 5\""
+  },
+  "license": "MIT",
+  "dependencies": {}
+}
