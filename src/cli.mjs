@@ -3,7 +3,7 @@
 // @usesocial/cli surface, bring-your-own-keys, no hosted backend.
 import { homedir } from "node:os"
 import { join } from "node:path"
-import { mkdirSync } from "node:fs"
+import { mkdirSync, existsSync } from "node:fs"
 import { openDB } from "./sqlsync/sqlite.mjs"
 import { syncCollection } from "./sqlsync/sync.mjs"
 import * as demo from "./adapters/demo.mjs"
@@ -28,6 +28,12 @@ const fail = (code, error, extra = {}) => {
 function db() {
   mkdirSync(HOME, { recursive: true })
   return openDB(DB_PATH)
+}
+
+// Read-only connection for `sql` — SQLite rejects writes at the engine level.
+function readonlyDb() {
+  if (!existsSync(DB_PATH)) return null
+  return openDB(DB_PATH, { readOnly: true })
 }
 
 const SCHEMA = {
@@ -120,8 +126,9 @@ export async function main(argv) {
   if (cmd === "sql") {
     const query = rest.join(" ")
     if (!query) return fail(2, "MissingQuery", { usage: "social sql \"select ...\"" })
-    if (!/^\s*(select|with|pragma|explain)\b/i.test(query)) return fail(2, "ReadOnly", { message: "sql is read-only (select/with/pragma/explain)" })
-    const database = db()
+    if (!/^\s*(select|with|explain)\b/i.test(query)) return fail(2, "ReadOnly", { message: "sql is read-only (select/with/explain)" })
+    const database = readonlyDb()
+    if (!database) return fail(1, "NoData", { message: "No local mirror yet — run `social sync <adapter> <collection>` first." })
     try {
       const rows = database.prepare(query).all()
       return out({ ok: true, rowCount: rows.length, rows })

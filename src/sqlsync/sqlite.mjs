@@ -12,9 +12,12 @@ const normalizeParams = (params) => {
   return out
 }
 
-export function openDB(path) {
-  const db = new DatabaseSync(path)
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
+// readOnly:true opens a SQLite read-only connection — writes are rejected by the
+// engine itself, not just by our query allow-list. Used for `sql` so a query can
+// never mutate the mirror even if the allow-list were bypassed.
+export function openDB(path, { readOnly = false } = {}) {
+  const db = readOnly ? new DatabaseSync(path, { readOnly: true }) : new DatabaseSync(path)
+  if (!readOnly) db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;")
   return {
     exec: (sql) => db.exec(sql),
     prepare: (sql) => {
