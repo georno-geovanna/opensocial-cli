@@ -24,7 +24,17 @@ async function getDispatcher() {
   return dispatcher || undefined
 }
 
+// HARD READ-ONLY INVARIANT. Every upstream provider call funnels through here.
+// This tool mirrors/reads only — it NEVER writes to X or LinkedIn (no post, reply,
+// like, follow, DM, etc.). We force GET and refuse any mutating method, so read-only
+// is enforced in code, not merely by omission. Do not weaken this.
 export async function proxyFetch(url, opts = {}) {
+  const method = String(opts.method ?? "GET").toUpperCase()
+  if (method !== "GET" && method !== "HEAD") {
+    throw new Error(
+      `READ-ONLY VIOLATION: opensocial-cli refused a ${method} request. This tool never writes to providers.`
+    )
+  }
   const d = await getDispatcher()
-  return fetch(url, d ? { ...opts, dispatcher: d } : opts)
+  return fetch(url, { ...opts, method: "GET", ...(d ? { dispatcher: d } : {}) })
 }

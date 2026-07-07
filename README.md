@@ -6,6 +6,8 @@ A clean-room reconstruction of the [`@usesocial/cli`](https://usesocial.dev) *ar
 
 > You call X / LinkedIn with your *own* API credentials. Your data lands in a local SQLite DB you fully own. `sql` queries are free, instant, and offline.
 
+> **Read-only by design.** This tool only *reads* (mirror + query). It never writes to a provider — no post, reply, like, retweet, follow, bookmark, or DM. Enforced in code: every upstream call funnels through one chokepoint (`src/adapters/_http.mjs`) that forces `GET` and throws on any mutating method. There is no write command and no write path.
+
 ## Why
 
 The clever part of usesocial isn't the outreach features — it's **`sqlsync`**: `sync` pulls a collection from a provider into local SQLite (incrementally, resumably), and then `sql` lets you (or your agent) run arbitrary read-only SQL over your mirrored graph for free. The upstream product wraps that in a hosted backend that holds provider creds (LinkedIn via Unipile), proxies, and **metered billing with markup**. This project keeps the good idea and drops the toll booth.
