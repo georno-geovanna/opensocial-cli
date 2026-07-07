@@ -23,16 +23,32 @@ social sync demo timeline
 social sql "select author, text, likes from demo_timeline order by likes desc limit 5"
 ```
 
-## Real usage (X, bring-your-own X API v2 app)
+## Providers & modes (bring-your-own credentials)
+
+Run `social adapters` for the live list. Each provider ships **two modes** so you're never locked to one paid reseller (LinkedIn's Proxycurl got sued and shut down in 2025 — never hard-depend on one).
+
+### X
+- **`v2`** (official) — `SOCIAL_X_BEARER` + `SOCIAL_X_USER_ID`. Compliant; good for writes.
+- **`cookie`** (free) — `SOCIAL_X_AUTH_TOKEN` + `SOCIAL_X_CT0` from your logged-in browser. Uses X's reverse-engineered GraphQL frontend (the `twikit` / `agent-twitter-client` pattern). No key, no visible rate limits. Fragile: GraphQL query-ids drift (pinned in `src/adapters/x.mjs`). Tweets timeline implemented.
 
 ```sh
-export SOCIAL_X_BEARER=<your X API v2 bearer token>
-export SOCIAL_X_USER_ID=<your numeric X user id>
+export SOCIAL_X_BEARER=... SOCIAL_X_USER_ID=...        # or: SOCIAL_X_AUTH_TOKEN=... SOCIAL_X_CT0=...
 social sync x tweets --since 2026-06-01
-social sql "select text, likes, impressions from x_tweets order by likes desc limit 10"
-social sync x followers
-social sql "select username, followers from x_followers order by followers desc limit 20"
+social sql "select text, likes, impressions from x_tweets order by impressions desc limit 10"
 ```
+
+### LinkedIn
+- **`unipile`** (default, reliable) — `SOCIAL_LI_MODE=unipile` + `SOCIAL_UNIPILE_URL` + `SOCIAL_UNIPILE_KEY` + `SOCIAL_LI_ACCOUNT`. Unipile holds your LinkedIn session (hosted auth, 2FA/checkpoints handled). ~€49/mo per-account, not per-request.
+- **`voyager`** (free/DIY) — `SOCIAL_LI_MODE=voyager` + `SOCIAL_LI_AT` (your `li_at` cookie) + `SOCIAL_LI_CSRF`. Hits LinkedIn's internal Voyager API directly (`tomquirk/linkedin-api` pattern). **Honest caveat: fragile, ban-prone, realistically <50 profiles/day on a single residential IP.** Use for small, personal pulls only.
+
+```sh
+export SOCIAL_LI_MODE=unipile SOCIAL_UNIPILE_URL=... SOCIAL_UNIPILE_KEY=... SOCIAL_LI_ACCOUNT=...
+social sync linkedin connections
+social sql "select name, headline from li_connections limit 20"
+```
+
+### Proxy (scale, honestly)
+We ship **no proxy fleet**. Default traffic goes out on **your own IP** (low volume, honest). To scale, set `HTTPS_PROXY` to a residential proxy you provide (`npm i undici` enables it, or Node ≥24 `--use-env-proxy`). That's the no-toll-booth tradeoff: their hosted product's real moat was residential proxies + rate-limit orchestration + billing markup — you bring your own IP instead of renting theirs.
 
 ## Commands
 
@@ -59,7 +75,9 @@ src/sqlsync/           the engine (provider-agnostic)
                        per-page cursor checkpoint -> rate-limit retry -> pacing
 src/adapters/
   demo.mjs             mock data (no creds) — proves the engine end to end
-  x.mjs                real X API v2 (SOCIAL_X_BEARER) — tweets, followers
+  x.mjs                X: API v2 (bearer) + free cookie/GraphQL mode — tweets, followers
+  linkedin.mjs         LinkedIn: Unipile mode + free Voyager mode — connections, messages, posts
+  _http.mjs            shared fetch with optional HTTPS_PROXY (bring-your-own residential IP)
 src/cli.mjs            command surface (sync/sql/schema/adapters/login)
 bin/social.mjs         entry
 ```

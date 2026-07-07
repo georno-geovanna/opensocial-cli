@@ -8,6 +8,7 @@ import { openDB } from "./sqlsync/sqlite.mjs"
 import { syncCollection } from "./sqlsync/sync.mjs"
 import * as demo from "./adapters/demo.mjs"
 import * as x from "./adapters/x.mjs"
+import * as linkedin from "./adapters/linkedin.mjs"
 
 const HOME = join(homedir(), ".social")
 const DB_PATH = process.env.SOCIAL_DB ?? join(HOME, "social.db")
@@ -15,6 +16,7 @@ const DB_PATH = process.env.SOCIAL_DB ?? join(HOME, "social.db")
 const ADAPTERS = {
   demo: { collections: demo.collections, api: () => demo.demoApi, ownId: () => "demo" },
   x: { collections: x.collections, api: () => x.xApi(), ownId: () => process.env.SOCIAL_X_USER_ID ?? "me" },
+  linkedin: { collections: linkedin.collections, api: () => linkedin.linkedinApi(), ownId: () => process.env.SOCIAL_LI_ACCOUNT ?? "me" },
 }
 
 const out = (obj) => process.stdout.write(JSON.stringify(obj) + "\n")
@@ -41,8 +43,22 @@ const SCHEMA = {
   },
   adapters: {
     demo: { collections: Object.keys(demo.collections), auth: "none" },
-    x: { collections: Object.keys(x.collections), auth: "SOCIAL_X_BEARER + SOCIAL_X_USER_ID (X API v2, your own app)" },
+    x: {
+      collections: Object.keys(x.collections),
+      modes: {
+        v2: "SOCIAL_X_BEARER + SOCIAL_X_USER_ID (official X API v2)",
+        cookie: "SOCIAL_X_AUTH_TOKEN + SOCIAL_X_CT0 (free reverse-engineered GraphQL; tweets only)",
+      },
+    },
+    linkedin: {
+      collections: Object.keys(linkedin.collections),
+      modes: {
+        unipile: "SOCIAL_LI_MODE=unipile + SOCIAL_UNIPILE_URL + SOCIAL_UNIPILE_KEY + SOCIAL_LI_ACCOUNT (reliable)",
+        voyager: "SOCIAL_LI_MODE=voyager + SOCIAL_LI_AT + SOCIAL_LI_CSRF (free/DIY, fragile, ban-prone)",
+      },
+    },
   },
+  proxy: "Optional HTTPS_PROXY routes upstream calls through your own residential IP (bring-your-own; no fleet shipped).",
 }
 
 function parseFlags(args) {
