@@ -6,6 +6,7 @@ import { join } from "node:path"
 import { mkdirSync, existsSync } from "node:fs"
 import { openDB } from "./sqlsync/sqlite.mjs"
 import { syncCollection } from "./sqlsync/sync.mjs"
+import { applyStoredCredentialsToEnv, saveCredentials, clearCredentials, loadCredentials } from "./lib/credentials.mjs"
 import * as demo from "./adapters/demo.mjs"
 import * as x from "./adapters/x.mjs"
 import * as linkedin from "./adapters/linkedin.mjs"
@@ -45,7 +46,9 @@ const SCHEMA = {
     sql: { usage: "social sql \"<query>\"", desc: "Run a read-only SQL query over the local mirror. JSON rows on stdout." },
     schema: { usage: "social schema", desc: "Emit this machine-readable command + adapter tree as JSON." },
     adapters: { usage: "social adapters", desc: "List available adapters and their collections." },
-    login: { usage: "social login <adapter>", desc: "How to provide credentials (bring-your-own-keys)." },
+    login: { usage: "printf 'KEY=value\\n' | social login <adapter>", desc: "Store BYO credentials from STDIN into the OS keychain (0600-file fallback). Never pass secrets on argv." },
+    logout: { usage: "social logout", desc: "Clear stored credentials." },
+    whoami: { usage: "social whoami", desc: "Show which credentials are present per adapter (presence only, never values)." },
   },
   adapters: {
     demo: { collections: Object.keys(demo.collections), auth: "none" },
@@ -86,7 +89,20 @@ function parseSince(v) {
   return t
 }
 
+const readStdin = () =>
+  new Promise((resolve) => {
+    if (process.stdin.isTTY) return resolve("")
+    let buf = ""
+    process.stdin.setEncoding("utf8")
+    process.stdin.on("data", (c) => (buf += c))
+    process.stdin.on("end", () => resolve(buf))
+  })
+
 export async function main(argv) {
+  // Load any stored credentials into env (without overriding explicit env vars) so
+  // adapters see them. Keychain first, else the 0600 file.
+  await applyStoredCredentialsToEnv()
+
   const [cmd, ...args] = argv
   const { flags, rest } = parseFlags(args)
 
@@ -94,10 +110,37 @@ export async function main(argv) {
   if (cmd === "schema") return out(SCHEMA)
   if (cmd === "adapters") return out({ ok: true, adapters: SCHEMA.adapters })
 
+  // `social login <adapter>` reads `KEY=value` lines from STDIN (never argv — keeps
+  // secrets out of shell history / process list) and stores them in the OS keychain
+  // (0600-file fallback). e.g.  printf 'SOCIAL_X_BEARER=...\nSOCIAL_X_USER_ID=123\n' | social login x
   if (cmd === "login") {
-    const a = rest[0]
-    if (a === "x") return out({ ok: true, adapter: "x", instructions: "export SOCIAL_X_BEARER=<your X API v2 bearer>; export SOCIAL_X_USER_ID=<your numeric id>" })
-    return out({ ok: true, note: "Bring-your-own-keys. See `social adapters` for each adapter's env vars." })
+    const body = await readStdin()
+    const patch = {}
+    for (const line of body.split("\n")) {
+      const m = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.+?)\s*$/)
+      if (m) patch[m[1]] = m[2]
+    }
+    if (Object.keys(patch).length === 0)
+      return out({ ok: true, note: "Pipe KEY=value lines via stdin, e.g. `printf 'SOCIAL_X_BEARER=...\\n' | social login x`. See `social adapters` for each adapter's vars." })
+    const res = await saveCredentials(patch)
+    return out({ ok: true, stored: res.store, keys: res.keys, note: "Stored securely. Values never printed. Run `social whoami` to check presence." })
+  }
+
+  if (cmd === "logout") {
+    await clearCredentials()
+    return out({ ok: true, note: "Cleared stored credentials." })
+  }
+
+  if (cmd === "whoami") {
+    const creds = await loadCredentials()
+    const present = (k) => k in creds || process.env[k] !== undefined
+    return out({
+      ok: true,
+      // presence only — never the values
+      x: { bearer: present("SOCIAL_X_BEARER"), user_id: present("SOCIAL_X_USER_ID"), cookie: present("SOCIAL_X_AUTH_TOKEN") && present("SOCIAL_X_CT0") },
+      linkedin: { unipile: present("SOCIAL_UNIPILE_KEY"), voyager: present("SOCIAL_LI_AT") && present("SOCIAL_LI_CSRF") },
+      store_keys: Object.keys(creds),
+    })
   }
 
   if (cmd === "sync") {

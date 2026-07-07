@@ -25,6 +25,20 @@ social sync demo timeline
 social sql "select author, text, likes from demo_timeline order by likes desc limit 5"
 ```
 
+## Credentials (secure storage)
+
+Two ways to provide keys:
+- **Env vars** — quickest for a shell session (`export SOCIAL_X_BEARER=...`).
+- **`social login`** (recommended) — reads `KEY=value` lines from **stdin** (never argv, so nothing lands in shell history or the process list) and stores them in your **OS keychain** (via optional `@napi-rs/keyring`), falling back to a **`~/.social/credentials.json` at mode 0600**. Mirrors how `@usesocial/cli` stores its bearer.
+
+```sh
+printf 'SOCIAL_X_BEARER=%s\nSOCIAL_X_USER_ID=%s\n' "$BEARER" "$UID" | social login x
+social whoami          # presence only — never prints values
+social logout           # clears stored credentials
+```
+
+Stored credentials are loaded into the environment on each run without overriding anything you set explicitly.
+
 ## Providers & modes (bring-your-own credentials)
 
 Run `social adapters` for the live list. Each provider ships **two modes** so you're never locked to one paid reseller (LinkedIn's Proxycurl got sued and shut down in 2025 — never hard-depend on one).
